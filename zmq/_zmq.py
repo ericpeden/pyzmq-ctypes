@@ -36,30 +36,78 @@ class CConfigure(object):
             libraries = ['zmq']
             )
     size_t = configure.SimpleType('size_t', c_long)
-    
-for cname in ['ZMQ_AFFINITY', 'ZMQ_DOWNSTREAM', 'EADDRINUSE',
+
+class Features(object):
+    _compilation_info_ = CConfigure._compilation_info_
+    has_dontwait = configure.Defined('ZMQ_DONTWAIT')
+    has_snd_rcv_hwm = configure.Defined('ZMQ_SNDHWM')
+    has_upstream_downstream = configure.Defined('ZMQ_DOWNSTREAM')
+    has_swap = configure.Defined('ZMQ_SWAP')
+    has_mcast_loop = configure.Defined('ZMQ_MCAST_LOOP')
+    has_max_vsm_size = configure.Defined('ZMQ_MAX_VSM_SIZE')
+
+features = configure.configure(Features)
+
+for cname in ['ZMQ_AFFINITY', 'EADDRINUSE',
     'EADDRNOTAVAIL', 'EAGAIN', 'ECONNREFUSED', 'EFAULT', 'EFSM',
     'EINPROGRESS', 'EINVAL', 'EMTHREAD', 'ENETDOWN', 'ENOBUFS',
     'ENOCOMPATPROTO', 'ENODEV', 'ENOMEM', 'ENOTSUP', 'EPROTONOSUPPORT',
-    'ETERM', 'ZMQ_FORWARDER', 'ZMQ_HWM', 'ZMQ_IDENTITY', 'ZMQ_MCAST_LOOP',
+    'ETERM', 'ZMQ_FORWARDER', 'ZMQ_IDENTITY',
     'ZMQ_NOBLOCK', 'ZMQ_PAIR', 'ZMQ_POLLERR', 'ZMQ_POLLIN', 'ZMQ_POLLOUT',
     'ZMQ_PUB', 'ZMQ_PULL', 'ZMQ_PUSH', 'ZMQ_QUEUE', 'ZMQ_RATE', 'ZMQ_RCVBUF',
     'ZMQ_RCVMORE', 'ZMQ_RECOVERY_IVL', 'ZMQ_REP', 'ZMQ_REQ', 'ZMQ_SNDBUF',
-    'ZMQ_SNDMORE', 'ZMQ_STREAMER', 'ZMQ_SUB', 'ZMQ_SUBSCRIBE', 'ZMQ_SWAP',
-    'ZMQ_UNSUBSCRIBE', 'ZMQ_UPSTREAM', 'ZMQ_XREP', 'ZMQ_XREQ', 'ZMQ_MAX_VSM_SIZE',
-    'ZMQ_FD', 'ZMQ_EVENTS', 'ZMQ_TYPE', 'ZMQ_LINGER', 'ZMQ_RECONNECT_IVL',
-    'ZMQ_BACKLOG', 'ZMQ_DEALER', 'ZMQ_ROUTER']:
+    'ZMQ_SNDMORE', 'ZMQ_STREAMER', 'ZMQ_SUB', 'ZMQ_SUBSCRIBE',
+    'ZMQ_UNSUBSCRIBE', 'ZMQ_XREP', 'ZMQ_XREQ',
+    'ZMQ_FD', 'ZMQ_EVENTS', 'ZMQ_TYPE', 'ZMQ_LINGER',
+    'ZMQ_RECONNECT_IVL', 'ZMQ_BACKLOG', 'ZMQ_DEALER', 'ZMQ_ROUTER']:
         pyname = cname.split('_', 1)[-1]
         setattr(CConfigure, pyname, configure.ConstantInteger(cname))
 
+if features['has_dontwait']:
+    CConfigure.DONTWAIT = configure.ConstantInteger('ZMQ_DONTWAIT')
+if features['has_snd_rcv_hwm']:
+    CConfigure.SNDHWM = configure.ConstantInteger('ZMQ_SNDHWM')
+    CConfigure.RCVHWM = configure.ConstantInteger('ZMQ_RCVHWM')
+else:
+    CConfigure.HWM = configure.ConstantInteger('ZMQ_HWM')
+if features['has_upstream_downstream']:
+    CConfigure.UPSTREAM = configure.ConstantInteger('ZMQ_UPSTREAM')
+    CConfigure.DOWNSTREAM = configure.ConstantInteger('ZMQ_DOWNSTREAM')
+if features['has_swap']:
+    CConfigure.SWAP = configure.ConstantInteger('ZMQ_SWAP')
+if features['has_mcast_loop']:
+    CConfigure.MCAST_LOOP = configure.ConstantInteger('ZMQ_MCAST_LOOP')
+if features['has_max_vsm_size']:
+    CConfigure.MAX_VSM_SIZE = configure.ConstantInteger('ZMQ_MAX_VSM_SIZE')
+
+# sentinel
+_SND_RCV_HWM = object()
+
 info = configure.configure(CConfigure)
+
+if not features['has_dontwait']:
+    info['DONTWAIT'] = info['NOBLOCK']
+if features['has_snd_rcv_hwm']:
+    info['HWM'] = _SND_RCV_HWM
+else:
+    info['SNDHWM'] = info['HWM']
+    info['RCVHWM'] = info['HWM']
+
 globals().update(info)
 
 # collections of sockopts, based on type:
 bytes_sockopts = [SUBSCRIBE, UNSUBSCRIBE, IDENTITY]
-int64_sockopts = [HWM, SWAP, AFFINITY, RATE, RECOVERY_IVL,
-                MCAST_LOOP, SNDBUF, RCVBUF, RCVMORE]
+int64_sockopts = [HWM, AFFINITY, RATE, RECOVERY_IVL,
+                SNDBUF, RCVBUF, RCVMORE]
 int_sockopts = [FD, EVENTS, TYPE, LINGER, RECONNECT_IVL, BACKLOG]
+
+if features['has_snd_rcv_hwm']:
+    int64_sockopts.append(SNDHWM)
+    int64_sockopts.append(RCVHWM)
+if features['has_swap']:
+    int64_sockopts.append(SWAP)
+if features['has_mcast_loop']:
+    int64_sockopts.append(MCAST_LOOP)
 
 class ZMQBaseError(Exception): pass
 
@@ -123,13 +171,18 @@ libzmq.zmq_term.argtypes = [c_void_p]
 
 # 0MQ message definition
 
-class zmq_msg_t(Structure):
-    _fields_ = [
-            ('content', c_void_p),
-            ('flags', c_ubyte),
-            ('vsm_size', c_ubyte),
-            ('vsm_data', c_ubyte*MAX_VSM_SIZE)
-            ]
+if features['has_max_vsm_size']:
+    class zmq_msg_t(Structure):
+        _fields_ = [
+                ('content', c_void_p),
+                ('flags', c_ubyte),
+                ('vsm_size', c_ubyte),
+                ('vsm_data', c_ubyte*MAX_VSM_SIZE)
+                ]
+else:
+    # zmq_msg_t became a blackbox in 3.x
+    class zmq_msg_t(Structure):
+        _fields_ = [('_', c_ubyte*32)]
 
 libzmq.zmq_msg_init.argtypes = [POINTER(zmq_msg_t)]
 libzmq.zmq_msg_init.restype = c_int
@@ -170,6 +223,19 @@ libzmq.zmq_send.restype = c_int
 libzmq.zmq_send.argtypes = [c_void_p, POINTER(zmq_msg_t), c_int]
 libzmq.zmq_recv.restype = c_int
 libzmq.zmq_recv.argtypes = [c_void_p, POINTER(zmq_msg_t), c_int]
+
+try:
+    libzmq.zmq_msg_send.restype = c_int
+    libzmq.zmq_msg_send.argtypes = [POINTER(zmq_msg_t), c_void_p, c_int]
+    libzmq.zmq_msg_recv.restype = c_int
+    libzmq.zmq_msg_recv.argtypes = [POINTER(zmq_msg_t), c_void_p, c_int]
+except AttributeError:
+    # old zmq version; provide wrappers instead
+    def zmq_msg_send(msg, sock, opt):
+        return libzmq.zmq_send(sock, msg, opt)
+
+    def zmq_msg_recv(msg, sock, opt):
+        return libzmq.zmq_recv(sock, msg, opt)
 
 class zmq_pollitem_t(Structure):
     _fields_ = [
@@ -330,7 +396,7 @@ class Socket(object):
         ----------
         option : str
             The name of the option to set. Can be any of: 
-            IDENTITY, HWM, SWAP, AFFINITY, RATE, 
+            IDENTITY, SNDHWM, RCVHWM, WAP, AFFINITY, RATE, 
             RECOVERY_IVL, MCAST_LOOP, SNDBUF, RCVBUF, RCVMORE.
 
         Returns
@@ -366,7 +432,7 @@ class Socket(object):
         ----------
         option : constant
             The name of the option to set. Can be any of: SUBSCRIBE, 
-            UNSUBSCRIBE, IDENTITY, HWM, SWAP, AFFINITY, RATE, 
+            UNSUBSCRIBE, IDENTITY, SNDHWM, RCVHWM, SWAP, AFFINITY, RATE, 
             RECOVERY_IVL, MCAST_LOOP, SNDBUF, RCVBUF.
         optval : int or str
             The value of the option to set.
@@ -376,7 +442,7 @@ class Socket(object):
         if isinstance(optval, unicode):
             raise TypeError("unicode not allowed, use setsockopt_unicode")
 
-        if option in bytes_sockopts:
+        elif option in bytes_sockopts:
             if not isinstance(optval, bytes):
                 raise TypeError('expected str, got: %r' % optval)
             zmq_setsockopt(self.handle, option, optval, len(optval))
@@ -384,8 +450,18 @@ class Socket(object):
             if not isinstance(optval, int):
                 raise TypeError('expected int, got: %r' % optval)
             optval_int64_c = c_int64(optval)
-            zmq_setsockopt(self.handle, option,
-                    byref(optval_int64_c), sizeof(optval_int64_c))
+
+            if option is _SND_RCV_HWM:
+                # zmq 3.2 split ZMQ_HWM into separate constants for send and
+                # receive. Per their recommendation, we will interpret that flag as
+                # setting both values.
+                zmq_setsockopt(self.handle, SNDHWM,
+                        byref(optval_int64_c), sizeof(optval_int64_c))
+                zmq_setsockopt(self.handle, RCVHWM,
+                        byref(optval_int64_c), sizeof(optval_int64_c))
+            else:
+                zmq_setsockopt(self.handle, option,
+                        byref(optval_int64_c), sizeof(optval_int64_c))
         elif option in int_sockopts:
             if not isinstance(optval, int):
                 raise TypeError('expected int, got: %r' % optval)
@@ -452,7 +528,7 @@ class Socket(object):
         msg_buf_size = zmq_msg_size(byref(msg))
         memmove(msg_buf, data, msg_buf_size)
 
-        return zmq_send(self.handle, byref(msg), flags)
+        return zmq_msg_send(byref(msg), self.handle, flags)
             
 
     def recv(self, flags=0, copy=True, track=False):
@@ -494,7 +570,7 @@ class Socket(object):
 
         zmq_msg_init(byref(msg))
         try:
-            zmq_recv(self.handle, byref(msg), flags)
+            zmq_msg_recv(byref(msg), self.handle, flags)
             data = zmq_msg_data(byref(msg))
             data_size = zmq_msg_size(byref(msg))
             return string_at(data, data_size)

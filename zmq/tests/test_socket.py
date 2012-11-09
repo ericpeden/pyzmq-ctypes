@@ -66,9 +66,12 @@ class TestSocket(BaseZMQTestCase):
         self.assertEquals(p.getsockopt(zmq.LINGER), 0)
         p.setsockopt(zmq.LINGER, -1)
         self.assertEquals(p.getsockopt(zmq.LINGER), -1)
-        self.assertEquals(p.getsockopt(zmq.HWM), 0)
-        p.setsockopt(zmq.HWM, 11)
-        self.assertEquals(p.getsockopt(zmq.HWM), 11)
+        if v[0] >= 3:
+            self.assertEquals(p.getsockopt(zmq.RCVHWM), 1000)
+        else:
+            self.assertEquals(p.getsockopt(zmq.RCVHWM), 0)
+        p.setsockopt(zmq.RCVHWM, 11)
+        self.assertEquals(p.getsockopt(zmq.RCVHWM), 11)
         # p.setsockopt(zmq.EVENTS, zmq.POLLIN)
         self.assertEquals(p.getsockopt(zmq.EVENTS), zmq.POLLOUT)
         self.assertRaisesErrno(zmq.EINVAL, p.setsockopt,zmq.EVENTS, 2**7-1)
@@ -76,13 +79,31 @@ class TestSocket(BaseZMQTestCase):
         self.assertEquals(p.getsockopt(zmq.TYPE), zmq.PUB)
         self.assertEquals(s.getsockopt(zmq.TYPE), s.socket_type)
         self.assertEquals(s.getsockopt(zmq.TYPE), zmq.SUB)
+
+    def test_3_2_sockopts(self):
+        "test sockopts introduced in zeromq 3.2.0"
+        v = list(map(int, zmq.zmq_version().split('.', 2)[:2]))
+        if not (v[0] >= 3 and v[1] >= 2):
+            raise SkipTest
+        p = self.context.socket(zmq.PUB)
+        self.assertEquals(p.getsockopt(zmq.SNDHWM), 1000)
+        self.assertEquals(p.getsockopt(zmq.RCVHWM), 1000)
+        p.setsockopt(zmq.HWM, 11)
+        self.assertEquals(p.getsockopt(zmq.SNDHWM), 11)
+        self.assertEquals(p.getsockopt(zmq.RCVHWM), 11)
+        p.setsockopt(zmq.SNDHWM, 13)
+        self.assertEquals(p.getsockopt(zmq.SNDHWM), 13)
+        self.assertEquals(p.getsockopt(zmq.RCVHWM), 11)
+        p.setsockopt(zmq.RCVHWM, 17)
+        self.assertEquals(p.getsockopt(zmq.SNDHWM), 13)
+        self.assertEquals(p.getsockopt(zmq.RCVHWM), 17)
     
     def test_sockopt_roundtrip(self):
         "test set/getsockopt roundtrip."
         p = self.context.socket(zmq.PUB)
-        self.assertEquals(p.getsockopt(zmq.HWM), 0)
-        p.setsockopt(zmq.HWM, 11)
-        self.assertEquals(p.getsockopt(zmq.HWM), 11)
+        self.assertNotEquals(p.getsockopt(zmq.BACKLOG), 221)
+        p.setsockopt(zmq.BACKLOG, 221)
+        self.assertEquals(p.getsockopt(zmq.BACKLOG), 221)
                 
 
     def test_close(self):
